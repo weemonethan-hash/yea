@@ -1,105 +1,154 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Trusted London Clock & Timer</title>
+<title>London Clock in Dark Room</title>
 <style>
     body {
-        font-family: Arial, sans-serif;
-        text-align: center;
-        margin-top: 50px;
+        margin: 0;
         background: #111;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
         color: #eee;
     }
-    .time {
-        font-size: 48px;
-        margin-bottom: 20px;
+    canvas {
+        background: transparent;
     }
-    .timer {
+    #timer {
+        position: absolute;
+        bottom: 50px;
         font-size: 36px;
-        margin-top: 30px;
-    }
-    button {
-        font-size: 22px;
-        padding: 10px 25px;
-        margin: 10px;
+        text-align: center;
+        width: 100%;
+        letter-spacing: 2px;
     }
 </style>
 </head>
 <body>
 
-<h1>Trusted London Clock & Timer</h1>
-
-<div class="time" id="clock">Loading...</div>
-
-<div class="timer" id="timer">00:00:00</div>
-<button id="start">Start Timer</button>
-<button id="stop">Stop Timer</button>
-<button id="reset">Reset</button>
+<canvas id="clockCanvas" width="500" height="500"></canvas>
+<div id="timer">00:00:00</div>
+<button id="start" style="position:absolute; bottom:10px; left:30%;">Start Timer</button>
+<button id="stop" style="position:absolute; bottom:10px; left:45%;">Stop Timer</button>
+<button id="reset" style="position:absolute; bottom:10px; left:60%;">Reset</button>
 
 <script>
 const TIME_API = "https://worldtimeapi.org/api/timezone/Europe/London";
 let serverTime = null;
 let lastSync = null;
 
-// Re-sync server time
+// TIMER
+let timerRunning = false;
+let timerStartServer = 0;
+let timerSaved = 0;
+
+// Load background image
+const bgImg = new Image();
+bgImg.src = "https://i.imgur.com/8a3hC7L.jpg"; // dark room placeholder
+bgImg.onload = () => {
+    fetchServerTime().then(() => {
+        requestAnimationFrame(drawClock);
+        requestAnimationFrame(updateTimer);
+    });
+};
+
+// Fetch London time
 async function fetchServerTime() {
     try {
         const res = await fetch(TIME_API);
         const data = await res.json();
         serverTime = new Date(data.datetime);
-        lastSync = Date.now(); // local timestamp of fetch
-    } catch (e) {
+        lastSync = Date.now();
+    } catch(e) {
         console.error("Error fetching time:", e);
     }
 }
 
-// Update displayed clock every second
-async function updateClock() {
-    if (!serverTime) {
-        await fetchServerTime();
+// Draw analog clock
+function drawClock() {
+    const canvas = document.getElementById("clockCanvas");
+    const ctx = canvas.getContext("2d");
+    const size = canvas.width;
+    ctx.clearRect(0,0,size,size);
+
+    // Draw background image
+    ctx.drawImage(bgImg, 0, 0, size, size);
+
+    // Calculate current London time
+    const nowLocal = Date.now();
+    const elapsed = nowLocal - lastSync;
+    const now = new Date(serverTime.getTime() + elapsed);
+
+    const hours = now.getHours() % 12;
+    const minutes = now.getMinutes();
+    const seconds = now.getSeconds();
+
+    const center = size/2;
+    const radius = size/2 * 0.8;
+
+    // Draw clock circle
+    ctx.beginPath();
+    ctx.arc(center, center, radius, 0, 2*Math.PI);
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fill();
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+
+    // Draw hour markers
+    for(let i=0; i<12; i++){
+        const angle = i * Math.PI/6;
+        const x1 = center + Math.cos(angle) * (radius-10);
+        const y1 = center + Math.sin(angle) * (radius-10);
+        const x2 = center + Math.cos(angle) * (radius-30);
+        const y2 = center + Math.sin(angle) * (radius-30);
+        ctx.beginPath();
+        ctx.moveTo(x1,y1);
+        ctx.lineTo(x2,y2);
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 4;
+        ctx.stroke();
     }
-    // Add elapsed time since last sync (based on user's timer, not system clock)
-    const now = Date.now();
-    const elapsed = now - lastSync;
 
-    const current = new Date(serverTime.getTime() + elapsed);
+    // Draw hands
+    drawHand(ctx, center, center, radius*0.5, ((hours + minutes/60) * 30) * Math.PI/180, 8); // hour
+    drawHand(ctx, center, center, radius*0.7, (minutes * 6) * Math.PI/180, 6); // minute
+    drawHand(ctx, center, center, radius*0.9, (seconds * 6) * Math.PI/180, 2, "#f00"); // second
 
-    document.getElementById("clock").innerText =
-        current.toLocaleTimeString("en-GB", { hour12: false });
-
-    requestAnimationFrame(updateClock);
+    requestAnimationFrame(drawClock);
 }
 
-// TIMER (based on server time)
-let timerRunning = false;
-let timerStartServer = 0;
-let timerSaved = 0;
+function drawHand(ctx, cx, cy, length, angle, width, color="#fff"){
+    ctx.beginPath();
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = color;
+    ctx.moveTo(cx,cy);
+    ctx.lineTo(cx + length * Math.cos(angle - Math.PI/2), cy + length * Math.sin(angle - Math.PI/2));
+    ctx.stroke();
+}
 
+// Timer functions
 async function startTimer() {
     if (!serverTime) await fetchServerTime();
-
     const nowLocal = Date.now();
     const elapsedSinceSync = nowLocal - lastSync;
     const nowServer = serverTime.getTime() + elapsedSinceSync;
 
     if (!timerRunning) {
         timerRunning = true;
-        timerStartServer = nowServer - timerSaved; // continue from previous
+        timerStartServer = nowServer - timerSaved;
     }
 }
+function stopTimer() { timerRunning = false; }
+function resetTimer() { timerSaved = 0; document.getElementById("timer").innerText = "00:00:00"; }
 
-function stopTimer() {
-    timerRunning = false;
-}
-
-function resetTimer() {
-    timerSaved = 0;
-    document.getElementById("timer").innerText = "00:00:00";
-}
-
-function updateTimer() {
-    if (timerRunning) {
+function updateTimer(){
+    if(timerRunning){
         const nowLocal = Date.now();
         const elapsedSinceSync = nowLocal - lastSync;
         const nowServer = serverTime.getTime() + elapsedSinceSync;
@@ -111,11 +160,9 @@ function updateTimer() {
         const secs = Math.floor((elapsed % 60000) / 1000);
 
         timerSaved = elapsed;
-
         document.getElementById("timer").innerText =
             `${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
     }
-
     requestAnimationFrame(updateTimer);
 }
 
@@ -123,12 +170,6 @@ function updateTimer() {
 document.getElementById("start").onclick = startTimer;
 document.getElementById("stop").onclick = stopTimer;
 document.getElementById("reset").onclick = resetTimer;
-
-// Start clocks
-fetchServerTime().then(() => {
-    updateClock();
-    updateTimer();
-});
 </script>
 
 </body>
